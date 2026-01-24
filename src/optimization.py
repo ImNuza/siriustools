@@ -68,8 +68,21 @@ def calculate_voyage_profit(vessel: pd.Series, cargo: pd.Series,
         return {
             "vessel": vessel['vessel_name'],
             "cargo": cargo['cargo_id'],
+            "route": f"{cargo['load_port']} -> {cargo['discharge_port']}",
             "is_feasible": False,
-            "feasibility_notes": f"Distance not found",
+            "feasibility_notes": f"Distance not found for route",
+            "profit": -999999999,
+            "tce": -999999999
+        }
+    
+    # Check if freight rate is valid (market cargoes have NaN)
+    if pd.isna(cargo['freight_rate']):
+        return {
+            "vessel": vessel['vessel_name'],
+            "cargo": cargo['cargo_id'],
+            "route": f"{cargo['load_port']} -> {cargo['discharge_port']}",
+            "is_feasible": False,
+            "feasibility_notes": "No freight rate (market cargo for bidding)",
             "profit": -999999999,
             "tce": -999999999
         }
@@ -226,54 +239,79 @@ def optimize_portfolio(include_market_cargoes: bool = True,
         print(f"Cargoes: {len(cargill_cargoes)} committed + {len(all_cargoes) - len(cargill_cargoes)} market")
     
     n_vessels = len(cargill_vessels)
+    n_cargoes = len(all_cargoes)
     
     best_profit = -float('inf')
     best_allocation = []
     
-    # Generate all permutations of n_vessels cargoes
-    cargo_indices = list(range(len(all_cargoes)))
+    # Handle case where we have fewer cargoes than vessels
+    # We need to try all combinations of which vessels carry which cargoes
+    cargo_indices = list(range(n_cargoes))
+    vessel_indices = list(range(n_vessels))
     
-    for cargo_combo in itertools.permutations(cargo_indices, n_vessels):
-        current_profit = 0
-        current_allocation = []
-        
-        # A. Calculate profit for each vessel-cargo pair
-        for i, cargo_idx in enumerate(cargo_combo):
-            vessel = cargill_vessels.iloc[i]
-            cargo = all_cargoes.iloc[cargo_idx]
+    # If fewer cargoes than vessels, we assign all cargoes to some vessels
+    # and leave other vessels for spot market
+    from itertools import combinations
+    
+    n_to_assign = min(n_vessels, n_cargoes)
+    
+    for vessel_combo in combinations(vessel_indices, n_to_assign):
+        for cargo_perm in itertools.permutations(cargo_indices, n_to_assign):
+            current_profit = 0
+            current_allocation = []
             
-            result = calculate_voyage_profit(vessel, cargo)
+            # A. Calculate profit for each vessel-cargo pair in this combination
+            for i, (v_idx, c_idx) in enumerate(zip(vessel_combo, cargo_perm)):
+                vessel = cargill_vessels.iloc[v_idx]
+                cargo = all_cargoes.iloc[c_idx]
+                
+                result = calculate_voyage_profit(vessel, cargo)
+                
+                # Only count feasible voyages
+                if result['is_feasible']:
+                    current_profit += result['profit']
+                else:
+                    current_profit += -1000000  # Heavy penalty for infeasible
+                
+                current_allocation.append(result)
             
-            # Only count feasible voyages
-            if result['is_feasible']:
-                current_profit += result['profit']
-            else:
-                current_profit += -1000000  # Heavy penalty for infeasible
+            # B. Add vessels not assigned to any cargo (available for spot market)
+            for v_idx in vessel_indices:
+                if v_idx not in vessel_combo:
+                    vessel = cargill_vessels.iloc[v_idx]
+                    current_allocation.append({
+                        "vessel": vessel['vessel_name'],
+                        "cargo": "SPOT MARKET",
+                        "route": "Available for market cargo",
+                        "is_feasible": True,
+                        "feasibility_notes": "Seeking market cargo",
+                        "profit": 0,
+                        "tce": 0,
+                        "total_days": 0
+                    })
             
-            current_allocation.append(result)
-        
-        # B. Handle unassigned committed cargoes (must outsource)
-        assigned_cargo_ids = [all_cargoes.iloc[idx]['cargo_id'] for idx in cargo_combo]
-        
-        for _, comm_cargo in cargill_cargoes.iterrows():
-            if comm_cargo['cargo_id'] not in assigned_cargo_ids:
-                outsource_profit = estimate_market_charter_cost(comm_cargo)
-                current_profit += outsource_profit
-                current_allocation.append({
-                    "vessel": "MARKET CHARTER",
-                    "cargo": comm_cargo['cargo_id'],
-                    "route": f"{comm_cargo['load_port']} -> {comm_cargo['discharge_port']}",
-                    "is_feasible": True,
-                    "feasibility_notes": "Outsourced to market vessel",
-                    "profit": round(outsource_profit, 0),
-                    "tce": 0,
-                    "total_days": 0
-                })
-        
-        # C. Update best if this is better
-        if current_profit > best_profit:
-            best_profit = current_profit
-            best_allocation = current_allocation
+            # C. Handle unassigned committed cargoes (must outsource)
+            assigned_cargo_ids = [all_cargoes.iloc[idx]['cargo_id'] for idx in cargo_perm]
+            
+            for _, comm_cargo in cargill_cargoes.iterrows():
+                if comm_cargo['cargo_id'] not in assigned_cargo_ids:
+                    outsource_profit = estimate_market_charter_cost(comm_cargo)
+                    current_profit += outsource_profit
+                    current_allocation.append({
+                        "vessel": "MARKET CHARTER",
+                        "cargo": comm_cargo['cargo_id'],
+                        "route": f"{comm_cargo['load_port']} -> {comm_cargo['discharge_port']}",
+                        "is_feasible": True,
+                        "feasibility_notes": "Outsourced to market vessel",
+                        "profit": round(outsource_profit, 0),
+                        "tce": 0,
+                        "total_days": 0
+                    })
+            
+            # D. Update best if this is better
+            if current_profit > best_profit:
+                best_profit = current_profit
+                best_allocation = current_allocation
     
     # Convert to DataFrame
     results_df = pd.DataFrame(best_allocation)
@@ -286,8 +324,19 @@ def optimize_portfolio(include_market_cargoes: bool = True,
         print("-"*90)
         
         for _, row in results_df.iterrows():
-            route = row.get('route', 'N/A')[:28]
-            print(f"{row['vessel']:<18} | {row['cargo']:<12} | {route:<30} | ${row['profit']:>10,.0f} | ${row.get('tce', 0):>8,.0f}")
+            # Handle case where route might be NaN (float)
+            route_val = row.get('route', 'N/A')
+            if isinstance(route_val, float) or route_val is None:
+                route = 'N/A'
+            else:
+                route = str(route_val)[:28]
+            
+            # Handle case where tce might be NaN
+            tce_val = row.get('tce', 0)
+            if pd.isna(tce_val):
+                tce_val = 0
+            
+            print(f"{row['vessel']:<18} | {row['cargo']:<12} | {route:<30} | ${row['profit']:>10,.0f} | ${tce_val:>8,.0f}")
         
         print("-"*90)
         print(f"{'TOTAL':<18} | {'':<12} | {'':<30} | ${best_profit:>10,.0f} |")
