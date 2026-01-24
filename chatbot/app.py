@@ -567,4 +567,6 @@ if not st.session_state.messages:
 # =============================================================================
 
 st.divider()
-st.caption("Cargill-SMU Datathon 2026 | Team Sirius")
+st.caption("Cargill-SMU Datathon 2026 | Team [Your Team Name]")
+
+
