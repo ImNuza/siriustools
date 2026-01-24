@@ -46,7 +46,8 @@ print(f"MGO Price: ${MGO_PRICE}/MT")
 
 def calculate_voyage_profit(vessel: pd.Series, cargo: pd.Series, 
                             use_eco_speed: bool = True,
-                            weather_margin: float = 0.05) -> dict:
+                            weather_margin: float = 0.05,
+                            extra_port_days: int = 0) -> dict:
     """
     Calculate voyage profit for a vessel-cargo combination.
     
@@ -55,6 +56,7 @@ def calculate_voyage_profit(vessel: pd.Series, cargo: pd.Series,
         cargo: Series from cargoes DataFrame
         use_eco_speed: Use economical speed (True) or warranted speed (False)
         weather_margin: Additional time buffer for weather (default 5%)
+        extra_port_days: Additional port waiting days for scenario analysis (default 0)
     
     Returns:
         Dictionary with voyage results
@@ -115,6 +117,10 @@ def calculate_voyage_profit(vessel: pd.Series, cargo: pd.Series,
     # Add 1 day buffer at each port for waiting
     days_load += 1
     days_discharge += 1
+    
+    # Add extra port days from scenario analysis (split between load and discharge)
+    days_load += extra_port_days / 2
+    days_discharge += extra_port_days / 2
     
     total_days = days_ballast + days_laden + days_load + days_discharge
     
@@ -200,7 +206,8 @@ def estimate_market_charter_cost(cargo: pd.Series) -> float:
 # =============================================================================
 
 def optimize_portfolio(include_market_cargoes: bool = True, 
-                       verbose: bool = True) -> pd.DataFrame:
+                       verbose: bool = True,
+                       extra_port_days: int = 0) -> pd.DataFrame:
     """
     Find optimal vessel-cargo allocation to maximize portfolio profit.
     
@@ -213,6 +220,7 @@ def optimize_portfolio(include_market_cargoes: bool = True,
     Args:
         include_market_cargoes: Whether to consider market cargoes
         verbose: Print progress and results
+        extra_port_days: Additional port waiting days for scenario analysis (default 0)
     
     Returns:
         DataFrame with optimal allocation details
@@ -265,7 +273,7 @@ def optimize_portfolio(include_market_cargoes: bool = True,
                 vessel = cargill_vessels.iloc[v_idx]
                 cargo = all_cargoes.iloc[c_idx]
                 
-                result = calculate_voyage_profit(vessel, cargo)
+                result = calculate_voyage_profit(vessel, cargo, extra_port_days=extra_port_days)
                 
                 # Only count feasible voyages
                 if result['is_feasible']:

@@ -82,7 +82,11 @@ def run_chatbot_optimization(data: dict, vlsfo_price: float = None,
     
     try:
         # Run the optimization from src/optimization.py
-        results_df = optimize_portfolio(include_market_cargoes=False, verbose=False)
+        results_df = optimize_portfolio(
+            include_market_cargoes=False, 
+            verbose=False,
+            extra_port_days=extra_port_days
+        )
         
         # Calculate total profit from results
         total_profit = results_df[results_df['profit'] > -999999]['profit'].sum()
