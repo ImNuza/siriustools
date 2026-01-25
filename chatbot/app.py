@@ -6,6 +6,7 @@ and supports what-if scenarios with actual recalculations.
 
 ENHANCED: Plotly interactive charts, Cargill branding, TCE heatmap
 FIXED: Scenario sliders now affect all visualizations
+NEW: Blank chat on start, sticky header, market vessel/cargo view
 
 Usage:
     cd chatbot
@@ -58,9 +59,20 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Cargill brand colors and professional styling
+# Cargill brand colors and professional styling with STICKY HEADER
 st.markdown("""
 <style>
+    /* Sticky header container */
+    .sticky-header {
+        position: sticky;
+        top: 0;
+        z-index: 999;
+        background: #0e1117;
+        padding: 10px 0;
+        margin: -1rem -1rem 1rem -1rem;
+        padding: 1rem;
+    }
+    
     .main-header { 
         font-size: 2.2rem; 
         font-weight: 700; 
@@ -108,8 +120,25 @@ st.markdown("""
         font-size: 0.9rem;
         opacity: 0.9;
     }
+    .welcome-box {
+        background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
+        border-left: 4px solid #0284c7;
+        padding: 20px;
+        margin: 20px 0;
+        border-radius: 0 12px 12px 0;
+        color: #0c4a6e;
+    }
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
+    
+    /* Make metrics row sticky */
+    [data-testid="stVerticalBlock"] > [data-testid="stHorizontalBlock"]:first-child {
+        position: sticky;
+        top: 0;
+        z-index: 999;
+        background: #0e1117;
+        padding: 10px 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -209,7 +238,6 @@ def viz_bunker_sensitivity(prices: List[float], profits: List[float], current_pr
         fillcolor='rgba(0, 132, 61, 0.1)'
     ))
     
-    # Find closest profit to current price
     idx = min(range(len(prices)), key=lambda i: abs(prices[i] - current_price))
     current_profit = profits[idx]
     
@@ -239,6 +267,78 @@ def viz_bunker_sensitivity(prices: List[float], profits: List[float], current_pr
     return fig
 
 
+def viz_vessel_table(vessels_df: pd.DataFrame, vessel_type: str = "all") -> go.Figure:
+    """Table visualization for vessels."""
+    if vessel_type != "all":
+        vessels_df = vessels_df[vessels_df['vessel_type'] == vessel_type]
+    
+    display_cols = ['vessel_name', 'dwt', 'hire_rate', 'current_port', 'etd', 'vessel_type']
+    df = vessels_df[display_cols].copy()
+    df.columns = ['Vessel', 'DWT', 'Hire Rate', 'Port', 'ETD', 'Type']
+    df['DWT'] = df['DWT'].apply(lambda x: f"{x:,}")
+    df['Hire Rate'] = df['Hire Rate'].apply(lambda x: f"${x:,.0f}/day")
+    df['ETD'] = pd.to_datetime(df['ETD']).dt.strftime('%Y-%m-%d')
+    df['Type'] = df['Type'].str.title()
+    
+    colors = ['#dcfce7' if t == 'Cargill' else '#fef3c7' for t in df['Type']]
+    
+    fig = go.Figure(data=[go.Table(
+        header=dict(
+            values=list(df.columns),
+            fill_color='#00843D',
+            font=dict(color='white', size=12),
+            align='left'
+        ),
+        cells=dict(
+            values=[df[col] for col in df.columns],
+            fill_color=[colors],
+            align='left'
+        )
+    )])
+    
+    fig.update_layout(
+        title=dict(text=f"Fleet Overview ({vessel_type.title()} Vessels)", font=dict(size=18, color='#00843D')),
+        height=400,
+        margin=dict(l=20, r=20, t=50, b=20)
+    )
+    return fig
+
+
+def viz_cargo_table(cargoes_df: pd.DataFrame, cargo_type: str = "all") -> go.Figure:
+    """Table visualization for cargoes."""
+    if cargo_type != "all":
+        cargoes_df = cargoes_df[cargoes_df['cargo_type'] == cargo_type]
+    
+    display_cols = ['cargo_id', 'commodity', 'quantity', 'load_port', 'discharge_port', 'cargo_type']
+    df = cargoes_df[display_cols].copy()
+    df.columns = ['Cargo ID', 'Commodity', 'Quantity', 'Load Port', 'Discharge Port', 'Type']
+    df['Quantity'] = df['Quantity'].apply(lambda x: f"{x:,} MT")
+    df['Type'] = df['Type'].str.title()
+    
+    colors = ['#dcfce7' if t == 'Cargill' else '#fef3c7' for t in df['Type']]
+    
+    fig = go.Figure(data=[go.Table(
+        header=dict(
+            values=list(df.columns),
+            fill_color='#00843D',
+            font=dict(color='white', size=12),
+            align='left'
+        ),
+        cells=dict(
+            values=[df[col] for col in df.columns],
+            fill_color=[colors],
+            align='left'
+        )
+    )])
+    
+    fig.update_layout(
+        title=dict(text=f"Cargo Overview ({cargo_type.title()} Cargoes)", font=dict(size=18, color='#00843D')),
+        height=400,
+        margin=dict(l=20, r=20, t=50, b=20)
+    )
+    return fig
+
+
 # =============================================================================
 # SESSION STATE INITIALIZATION
 # =============================================================================
@@ -247,6 +347,8 @@ if 'messages' not in st.session_state:
     st.session_state.messages = []
 if 'data' not in st.session_state and DATA_LOADED:
     st.session_state.data = load_all_data()
+if 'scenario_applied' not in st.session_state:
+    st.session_state.scenario_applied = False
 if 'optimization_results' not in st.session_state and DATA_LOADED:
     results = optimize_portfolio(include_market_cargoes=False, verbose=False)
     st.session_state.optimization_results = results
@@ -271,9 +373,11 @@ if 'chat_counter' not in st.session_state:
 
 def get_scenario_label() -> str:
     """Get a label describing current scenario settings."""
+    if not st.session_state.scenario_applied:
+        return ""
     if (st.session_state.current_vlsfo == st.session_state.base_vlsfo and 
         st.session_state.current_port_delay == 0):
-        return ""
+        return "Base Scenario"
     
     parts = []
     if st.session_state.current_vlsfo != st.session_state.base_vlsfo:
@@ -282,7 +386,7 @@ def get_scenario_label() -> str:
     if st.session_state.current_port_delay > 0:
         parts.append(f"+{st.session_state.current_port_delay} port days")
     
-    return ", ".join(parts)
+    return ", ".join(parts) if parts else "Base Scenario"
 
 
 def run_optimization_with_scenario() -> tuple:
@@ -357,8 +461,8 @@ def apply_scenario(bunker_change: int, port_delay: int):
     st.session_state.current_vlsfo = st.session_state.base_vlsfo * (1 + bunker_change / 100)
     st.session_state.current_mgo = st.session_state.base_mgo * (1 + bunker_change / 100)
     st.session_state.current_port_delay = port_delay
+    st.session_state.scenario_applied = True
     
-    # Re-run optimization with new parameters
     results, profit = run_optimization_with_scenario()
     st.session_state.optimization_results = results
     st.session_state.total_profit = profit
@@ -405,7 +509,7 @@ def get_vessel_info(vessel_name: str) -> str:
     
     v = vessel.iloc[0]
     return f"""
-**🚢 {v['vessel_name']}**
+**🚢 {v['vessel_name']}** ({v['vessel_type'].title()})
 
 | Attribute | Value |
 |-----------|-------|
@@ -424,7 +528,29 @@ def process_query(query: str) -> Tuple[str, Any]:
     viz = None
     scenario_label = get_scenario_label()
     
-    # Heatmap request - NOW USES SCENARIO
+    # Check if scenario has been applied
+    if not st.session_state.scenario_applied and any(word in query_lower for word in 
+        ['heatmap', 'matrix', 'recommend', 'optimal', 'sensitivity', 'tce', 'profit']):
+        return """
+<div class="welcome-box">
+⚠️ <strong>Please apply a scenario first!</strong><br><br>
+Use the sidebar to set your bunker price and port delay assumptions, then click <strong>"Apply Scenario"</strong> to see results.
+</div>
+""", None
+    
+    # Show all vessels
+    if any(word in query_lower for word in ['all vessel', 'fleet', 'show vessel', 'list vessel']):
+        data = st.session_state.data
+        viz = viz_vessel_table(data['vessels'], 'all')
+        return "Here's the complete fleet overview (Cargill + Market vessels):", viz
+    
+    # Show all cargoes
+    if any(word in query_lower for word in ['all cargo', 'show cargo', 'list cargo']):
+        data = st.session_state.data
+        viz = viz_cargo_table(data['cargoes'], 'all')
+        return "Here's the complete cargo overview (Cargill + Market cargoes):", viz
+    
+    # Heatmap request
     if any(word in query_lower for word in ['heatmap', 'matrix', 'all combinations', 'compare all']):
         tce_data = get_all_tce_data_with_scenario()
         viz = viz_heatmap(tce_data, scenario_label)
@@ -433,7 +559,7 @@ def process_query(query: str) -> Tuple[str, Any]:
             response += f"\n\n*Using scenario: {scenario_label}*"
         return response, viz
     
-    # Recommendation queries - USES SCENARIO (already does via session state)
+    # Recommendation queries
     if any(word in query_lower for word in ['recommend', 'best', 'optimal', 'allocation', 'summary']):
         results = st.session_state.optimization_results
         valid = results[(results['profit'] > -999999) & (results['cargo'] != 'SPOT MARKET')]
@@ -443,7 +569,7 @@ def process_query(query: str) -> Tuple[str, Any]:
             viz = viz_tce_bar(tce_data, scenario_label)
         return get_voyage_summary(), viz
     
-    # Sensitivity analysis - NOW USES SCENARIO AS BASELINE
+    # Sensitivity analysis
     if any(word in query_lower for word in ['sensitivity', 'bunker impact', 'what if bunker']):
         import optimization as opt
         original_vlsfo = opt.VLSFO_PRICE
@@ -476,7 +602,10 @@ def process_query(query: str) -> Tuple[str, Any]:
         return response, viz
     
     # Vessel-specific queries
-    vessel_names = ['ann bell', 'ocean horizon', 'pacific glory', 'golden ascent']
+    vessel_names = ['ann bell', 'ocean horizon', 'pacific glory', 'golden ascent',
+                    'atlantic fortune', 'pacific vanguard', 'coral emperor', 'everest ocean',
+                    'polaris spirit', 'iron century', 'mountain trader', 'navis pride',
+                    'aurora sky', 'zenith glory', 'titan legacy']
     for vessel in vessel_names:
         if vessel in query_lower:
             return get_vessel_info(vessel), None
@@ -516,13 +645,14 @@ Total Portfolio Profit: **${st.session_state.total_profit:,.0f}**
 
 1. **📊 Voyage Recommendations** - "What is the optimal allocation?"
 2. **🗺️ TCE Heatmap** - "Show me all combinations" 
-3. **🚢 Vessel Information** - "Tell me about Ann Bell"
-4. **💰 Profit Analysis** - "What is the total profit?"
-5. **📈 TCE Analysis** - "What are the TCE values?"
-6. **📉 Sensitivity Analysis** - "Show bunker sensitivity"
-7. **🔄 Scenarios** - Use the sidebar sliders to test what-if scenarios
+3. **🚢 Fleet Overview** - "Show all vessels" (includes market vessels)
+4. **📦 Cargo Overview** - "Show all cargoes" (includes market cargoes)
+5. **💰 Profit Analysis** - "What is the total profit?"
+6. **📈 TCE Analysis** - "What are the TCE values?"
+7. **📉 Sensitivity Analysis** - "Show bunker sensitivity"
+8. **🔄 Scenarios** - Use the sidebar sliders to test what-if scenarios
 
-Try asking one of these questions!
+**Tip:** Start by clicking "Apply Scenario" in the sidebar!
 """, None
 
 
@@ -538,41 +668,45 @@ if not DATA_LOADED:
     st.error(f"Failed to load data: {IMPORT_ERROR}")
     st.stop()
 
-# Metrics row
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-value">${st.session_state.total_profit:,.0f}</div>
-        <div class="metric-label">Portfolio Profit</div>
-    </div>
-    """, unsafe_allow_html=True)
-with col2:
-    valid = st.session_state.optimization_results[st.session_state.optimization_results['profit'] > -999999]
-    assigned = len(valid[valid['cargo'] != 'SPOT MARKET'])
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-value">{assigned}</div>
-        <div class="metric-label">Voyages Assigned</div>
-    </div>
-    """, unsafe_allow_html=True)
-with col3:
-    avg_tce = valid[valid['cargo'] != 'SPOT MARKET']['tce'].mean() if not valid.empty else 0
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-value">${avg_tce:,.0f}</div>
-        <div class="metric-label">Avg TCE/day</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-# Show current scenario if not default
-scenario_label = get_scenario_label()
-if scenario_label:
-    st.markdown(f"""
-    <div class="scenario-box">
-        📊 <strong>Active Scenario:</strong> {scenario_label}
-    </div>
-    """, unsafe_allow_html=True)
+# STICKY METRICS ROW - Only show if scenario applied
+if st.session_state.scenario_applied:
+    # Create a container that will be sticky
+    metrics_container = st.container()
+    with metrics_container:
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-value">${st.session_state.total_profit:,.0f}</div>
+                <div class="metric-label">Portfolio Profit</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with col2:
+            valid = st.session_state.optimization_results[st.session_state.optimization_results['profit'] > -999999]
+            assigned = len(valid[valid['cargo'] != 'SPOT MARKET'])
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-value">{assigned}</div>
+                <div class="metric-label">Voyages Assigned</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with col3:
+            avg_tce = valid[valid['cargo'] != 'SPOT MARKET']['tce'].mean() if not valid.empty else 0
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-value">${avg_tce:,.0f}</div>
+                <div class="metric-label">Avg TCE/day</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Show current scenario
+        scenario_label = get_scenario_label()
+        if scenario_label:
+            st.markdown(f"""
+            <div class="scenario-box">
+                📊 <strong>Active Scenario:</strong> {scenario_label}
+            </div>
+            """, unsafe_allow_html=True)
 
 st.divider()
 
@@ -610,7 +744,7 @@ with st.sidebar:
 New portfolio profit: <strong>${st.session_state.total_profit:,.0f}</strong>
 </div>
 
-All visualizations will now reflect this scenario. Click any Quick Action to see updated results.
+All visualizations will now reflect this scenario. Click any Quick Action to see results!
 """
         })
         st.rerun()
@@ -650,22 +784,44 @@ All visualizations will now reflect this scenario. Click any Quick Action to see
     
     st.divider()
     
+    st.markdown("### 📦 Data Explorer")
+    
+    if st.button("🚢 Show All Vessels", use_container_width=True):
+        st.session_state.chat_counter += 1
+        st.session_state.messages.append({"role": "user", "content": "Show all vessels"})
+        response, viz = process_query("all vessels fleet")
+        st.session_state.messages.append({"role": "assistant", "content": response, "viz": viz, "id": st.session_state.chat_counter})
+        st.rerun()
+    
+    if st.button("📦 Show All Cargoes", use_container_width=True):
+        st.session_state.chat_counter += 1
+        st.session_state.messages.append({"role": "user", "content": "Show all cargoes"})
+        response, viz = process_query("all cargoes")
+        st.session_state.messages.append({"role": "assistant", "content": response, "viz": viz, "id": st.session_state.chat_counter})
+        st.rerun()
+    
+    st.divider()
+    
     st.markdown("### 💬 Chat History")
     
     if st.button("🗑️ Clear Chat", use_container_width=True):
         st.session_state.messages = []
         st.session_state.chat_counter = 0
+        st.session_state.scenario_applied = False
         st.rerun()
     
     st.caption(f"Messages: {len(st.session_state.messages)}")
     
     st.divider()
     
-    st.caption(f"**Current Prices:**")
-    st.caption(f"VLSFO: ${st.session_state.current_vlsfo:.0f}/MT")
-    st.caption(f"MGO: ${st.session_state.current_mgo:.0f}/MT")
-    if st.session_state.current_port_delay > 0:
-        st.caption(f"Port Delay: +{st.session_state.current_port_delay} days")
+    if st.session_state.scenario_applied:
+        st.caption(f"**Current Prices:**")
+        st.caption(f"VLSFO: ${st.session_state.current_vlsfo:.0f}/MT")
+        st.caption(f"MGO: ${st.session_state.current_mgo:.0f}/MT")
+        if st.session_state.current_port_delay > 0:
+            st.caption(f"Port Delay: +{st.session_state.current_port_delay} days")
+    else:
+        st.caption("*Apply a scenario to begin*")
 
 # Display chat messages
 for idx, message in enumerate(st.session_state.messages):
@@ -689,14 +845,23 @@ if prompt := st.chat_input("Ask about voyage recommendations..."):
         if viz is not None:
             st.plotly_chart(viz, use_container_width=True, key=f"new_viz_{st.session_state.chat_counter}")
 
-# Show initial summary if no messages
-if not st.session_state.messages:
-    st.info("👋 Welcome! Ask me about voyage recommendations or use the sidebar to run scenarios.")
-    with st.expander("📊 Current Optimal Allocation", expanded=True):
-        st.markdown(get_voyage_summary(), unsafe_allow_html=True)
-        tce_data = get_all_tce_data_with_scenario()
-        if tce_data:
-            st.plotly_chart(viz_heatmap(tce_data), use_container_width=True, key="initial_heatmap")
+# Show welcome message if no messages and no scenario applied
+if not st.session_state.messages and not st.session_state.scenario_applied:
+    st.markdown("""
+    <div class="welcome-box">
+    <h3>👋 Welcome to Cargill Voyage Assistant!</h3>
+    <p>This tool helps you optimize vessel-cargo allocation and analyze different scenarios.</p>
+    <br>
+    <strong>To get started:</strong>
+    <ol>
+        <li>Set your <strong>Bunker Price Change</strong> and <strong>Port Delay</strong> assumptions in the sidebar</li>
+        <li>Click <strong>"Apply Scenario"</strong> to calculate optimal allocation</li>
+        <li>Use <strong>Quick Actions</strong> to explore recommendations, heatmaps, and sensitivity analysis</li>
+    </ol>
+    <br>
+    <p>💡 <em>You can also type questions in the chat box below!</em></p>
+    </div>
+    """, unsafe_allow_html=True)
 
 # =============================================================================
 # FOOTER
