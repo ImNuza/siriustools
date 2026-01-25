@@ -18,6 +18,10 @@ DATA_DIR = Path(__file__).parent.parent / "data"
 RAW_DATA_DIR = DATA_DIR / "raw"
 PROCESSED_DATA_DIR = DATA_DIR / "processed"
 
+# Default bunker prices (Singapore, March 2026)
+VLSFO_PRICE = 490  # $/MT
+MGO_PRICE = 649    # $/MT
+
 
 # =============================================================================
 # PORT DISTANCES
