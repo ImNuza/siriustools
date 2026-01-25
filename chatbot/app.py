@@ -292,6 +292,7 @@ def viz_vessel_table(vessels_df: pd.DataFrame, vessel_type: str = "all") -> go.F
         cells=dict(
             values=[df[col] for col in df.columns],
             fill_color=[colors],
+            font=dict(color='#1f2937', size=11),
             align='left'
         )
     )])
@@ -327,6 +328,7 @@ def viz_cargo_table(cargoes_df: pd.DataFrame, cargo_type: str = "all") -> go.Fig
         cells=dict(
             values=[df[col] for col in df.columns],
             fill_color=[colors],
+            font=dict(color='#1f2937', size=11),
             align='left'
         )
     )])
@@ -751,6 +753,9 @@ All visualizations will now reflect this scenario. Click any Quick Action to see
     
     if st.button("🔄 Reset to Base", use_container_width=True):
         apply_scenario(0, 0)
+        # Reset slider values in session state
+        st.session_state.bunker_slider = 0
+        st.session_state.port_slider = 0
         st.session_state.messages.append({
             "role": "assistant",
             "content": "✅ Reset to base scenario (VLSFO: $490/MT, no port delays)"
