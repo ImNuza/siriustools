@@ -62,17 +62,6 @@ st.set_page_config(
 # Cargill brand colors and professional styling with STICKY HEADER
 st.markdown("""
 <style>
-    /* Sticky header container */
-    .sticky-header {
-        position: sticky;
-        top: 0;
-        z-index: 999;
-        background: #0e1117;
-        padding: 10px 0;
-        margin: -1rem -1rem 1rem -1rem;
-        padding: 1rem;
-    }
-    
     .main-header { 
         font-size: 2.2rem; 
         font-weight: 700; 
@@ -131,13 +120,18 @@ st.markdown("""
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     
-    /* Make metrics row sticky */
-    [data-testid="stVerticalBlock"] > [data-testid="stHorizontalBlock"]:first-child {
-        position: sticky;
-        top: 0;
-        z-index: 999;
-        background: #0e1117;
-        padding: 10px 0;
+    /* Clean sidebar metrics styling */
+    [data-testid="stMetric"] {
+        background: linear-gradient(135deg, #00843D 0%, #006B31 100%);
+        padding: 12px;
+        border-radius: 8px;
+    }
+    [data-testid="stMetric"] label {
+        color: rgba(255,255,255,0.9) !important;
+    }
+    [data-testid="stMetric"] [data-testid="stMetricValue"] {
+        color: white !important;
+        font-weight: 700 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -276,7 +270,8 @@ def viz_vessel_table(vessels_df: pd.DataFrame, vessel_type: str = "all") -> go.F
     df = vessels_df[display_cols].copy()
     df.columns = ['Vessel', 'DWT', 'Hire Rate', 'Port', 'ETD', 'Type']
     df['DWT'] = df['DWT'].apply(lambda x: f"{x:,}")
-    df['Hire Rate'] = df['Hire Rate'].apply(lambda x: f"${x:,.0f}/day")
+    # Handle NaN hire_rate - use Baltic 5TC rate as default for market vessels
+    df['Hire Rate'] = df['Hire Rate'].apply(lambda x: f"${x:,.0f}/day" if pd.notna(x) else "$18,454/day (Market)")
     df['ETD'] = pd.to_datetime(df['ETD']).dt.strftime('%Y-%m-%d')
     df['Type'] = df['Type'].str.title()
     
@@ -471,33 +466,180 @@ def apply_scenario(bunker_change: int, port_delay: int):
 
 
 def get_voyage_summary() -> str:
-    """Generate formatted voyage summary."""
+    """Generate formatted voyage summary with detailed rationale based on business rules."""
     results = st.session_state.optimization_results
     valid_results = results[results['profit'] > -999999]
+    data = st.session_state.data
+    vessels = data['vessels']
+    cargoes = data['cargoes']
     
     scenario_label = get_scenario_label()
     scenario_note = f"\n<div class='scenario-box'>📊 Scenario: {scenario_label}</div>" if scenario_label else ""
     
+    # Calculate key metrics
+    assigned = valid_results[valid_results['cargo'] != 'SPOT MARKET']
+    avg_tce = assigned['tce'].mean() if not assigned.empty else 0
+    
+    # Build detailed summary with rationale
     summary = f"""
 <div class="info-box">
-<strong>🎯 Optimal Portfolio Allocation</strong><br><br>
-<strong>Total Portfolio Profit: ${st.session_state.total_profit:,.0f}</strong>
+<strong>🎯 Fleet Employment & Scenario Analysis</strong><br><br>
+This analysis outlines the recommended vessel employment strategy for Cargill's Capesize fleet,
+including committed cargo allocation and sensitivity analysis.
 </div>
 {scenario_note}
 
-**Assigned Voyages:**
+---
+
+## 1. Base Case – Committed Cargo Allocation
+
+| Cargo | Route / Laycan | Assigned Vessel | Rationale |
+|-------|---------------|-----------------|----------|
 """
-    for _, row in valid_results.iterrows():
-        if row['cargo'] != 'SPOT MARKET':
-            summary += f"\n- **{row['vessel']}** → {row['cargo']}: TCE ${row['tce']:,.0f}/day, Profit ${row['profit']:,.0f}"
     
+    # Generate rationale for each assignment
+    for _, row in assigned.iterrows():
+        vessel_name = row['vessel']
+        cargo_id = row['cargo']
+        tce = row['tce']
+        profit = row['profit']
+        
+        # Get vessel and cargo details
+        vessel_info = vessels[vessels['vessel_name'] == vessel_name].iloc[0] if not vessels[vessels['vessel_name'] == vessel_name].empty else None
+        cargo_info = cargoes[cargoes['cargo_id'] == cargo_id].iloc[0] if not cargoes[cargoes['cargo_id'] == cargo_id].empty else None
+        
+        # Build route string
+        if cargo_info is not None:
+            route = f"{cargo_info.get('load_port', 'N/A')} → {cargo_info.get('discharge_port', 'N/A')}"
+            laycan = f"{cargo_info.get('laycan_start', 'N/A')}"
+        else:
+            route = "N/A"
+            laycan = "N/A"
+        
+        # Generate rationale based on business rules
+        rationale = generate_assignment_rationale(vessel_info, cargo_info, tce, profit, vessels, cargoes)
+        
+        summary += f"| {cargo_id} | {route} \| {laycan} | {vessel_name} | {rationale} |\n"
+    
+    # Section 2: Next Employment for remaining vessels
     unassigned = results[results['cargo'] == 'SPOT MARKET']
     if not unassigned.empty:
-        summary += "\n\n**Unassigned Vessels (seek spot market):**"
+        summary += "\n---\n\n## 2. Next Employment – Remaining Cargill Vessels\n\n"
+        summary += "| Vessel | Current Position | Recommended Action | Rationale |\n"
+        summary += "|--------|-----------------|-------------------|-----------|\n"
+        
         for _, row in unassigned.iterrows():
-            summary += f"\n- {row['vessel']}"
+            vessel_name = row['vessel']
+            vessel_info = vessels[vessels['vessel_name'] == vessel_name].iloc[0] if not vessels[vessels['vessel_name'] == vessel_name].empty else None
+            
+            if vessel_info is not None:
+                current_port = vessel_info.get('current_port', 'N/A')
+                # Generate positioning recommendation
+                action, rationale = generate_positioning_recommendation(vessel_info, cargoes)
+                summary += f"| {vessel_name} | {current_port} | {action} | {rationale} |\n"
+    
+    # Section 3: Scenario Thresholds
+    summary += "\n---\n\n## 3. Scenario Analysis Thresholds\n\n"
+    summary += "Based on current scenario parameters:\n\n"
+    
+    # Calculate thresholds
+    if not assigned.empty:
+        total_profit = st.session_state.total_profit
+        daily_hire = 18454  # Baltic 5TC rate
+        idle_fuel_cost = 2.0 * st.session_state.current_vlsfo  # Port idle consumption
+        
+        # Fuel price threshold = Profit / Total Fuel Cost (approximate)
+        avg_voyage_days = 60  # Approximate
+        avg_fuel_consumption = 45  # MT/day average
+        total_fuel_cost_estimate = avg_voyage_days * avg_fuel_consumption * st.session_state.current_vlsfo * len(assigned)
+        
+        fuel_threshold = (total_profit / total_fuel_cost_estimate * 100) if total_fuel_cost_estimate > 0 else 0
+        
+        summary += f"| Metric | Formula | Current Value |\n"
+        summary += f"|--------|---------|---------------|\n"
+        summary += f"| **Fuel Price Sensitivity** | Profit ÷ Total Fuel Cost | Portfolio breaks even if bunker rises **{fuel_threshold:.0f}%** |\n"
+        summary += f"| **Current VLSFO** | Base × (1 + Δ%) | ${st.session_state.current_vlsfo:,.0f}/MT |\n"
+        summary += f"| **Port Delay Impact** | Each day costs ~${daily_hire + idle_fuel_cost:,.0f} | {st.session_state.current_port_delay} days applied |\n"
+    
+    # Summary metrics
+    summary += f"\n---\n\n### 📊 Portfolio Summary\n\n"
+    summary += f"- **Total Portfolio Profit:** ${st.session_state.total_profit:,.0f}\n"
+    summary += f"- **Voyages Assigned:** {len(assigned)}\n"
+    summary += f"- **Average TCE:** ${avg_tce:,.0f}/day\n"
     
     return summary
+
+
+def generate_assignment_rationale(vessel_info, cargo_info, tce: float, profit: float, all_vessels, all_cargoes) -> str:
+    """Generate detailed rationale for why a vessel was assigned to a cargo."""
+    reasons = []
+    
+    if vessel_info is None or cargo_info is None:
+        return "Optimal TCE among feasible combinations"
+    
+    vessel_name = vessel_info['vessel_name']
+    vessel_port = vessel_info.get('current_port', '')
+    vessel_type = vessel_info.get('vessel_type', 'cargill')
+    load_port = cargo_info.get('load_port', '')
+    cargo_type = cargo_info.get('cargo_type', '')
+    
+    # Reason 1: Positioning advantage
+    if vessel_port and load_port:
+        # Check if vessel is well-positioned
+        atlantic_ports = ['ROTTERDAM', 'PORT TALBOT', 'TUBARAO', 'PONTA DA MADEIRA']
+        pacific_ports = ['QINGDAO', 'CAOFEIDIAN', 'XIAMEN', 'LIANYUNGANG', 'PORT HEDLAND', 'DAMPIER']
+        
+        vessel_in_atlantic = any(p in vessel_port.upper() for p in atlantic_ports)
+        load_in_atlantic = any(p in load_port.upper() for p in atlantic_ports) or 'BRAZIL' in load_port.upper() or 'GUINEA' in load_port.upper()
+        
+        vessel_in_pacific = any(p in vessel_port.upper() for p in pacific_ports)
+        load_in_pacific = any(p in load_port.upper() for p in pacific_ports) or 'AUSTRALIA' in load_port.upper()
+        
+        if (vessel_in_atlantic and load_in_atlantic) or (vessel_in_pacific and load_in_pacific):
+            reasons.append("Well-positioned geographically")
+        elif vessel_in_atlantic and load_in_pacific:
+            reasons.append("Requires ballast voyage from Atlantic")
+    
+    # Reason 2: TCE performance
+    if tce > 20000:
+        reasons.append(f"Strong TCE of ${tce:,.0f}/day")
+    elif tce > 15000:
+        reasons.append(f"Acceptable TCE of ${tce:,.0f}/day")
+    elif tce > 0:
+        reasons.append(f"Marginal but positive TCE")
+    
+    # Reason 3: Cargill vs Market vessel
+    if vessel_type == 'cargill':
+        reasons.append("Cargill-controlled vessel (no hire cost)")
+    else:
+        reasons.append("Market vessel hired at Baltic 5TC rate")
+    
+    # Reason 4: Cargo commitment
+    if cargo_type == 'cargill':
+        reasons.append("Committed cargo - must be fulfilled")
+    
+    return "; ".join(reasons) if reasons else "Optimal allocation based on TCE maximization"
+
+
+def generate_positioning_recommendation(vessel_info, all_cargoes) -> tuple:
+    """Generate positioning recommendation for unassigned vessels."""
+    if vessel_info is None:
+        return "Seek spot market", "No specific positioning recommended"
+    
+    vessel_port = vessel_info.get('current_port', '')
+    
+    # Determine region and recommend positioning
+    atlantic_ports = ['ROTTERDAM', 'PORT TALBOT', 'TUBARAO', 'PONTA DA MADEIRA']
+    pacific_ports = ['QINGDAO', 'CAOFEIDIAN', 'XIAMEN', 'LIANYUNGANG', 'PORT HEDLAND', 'DAMPIER']
+    
+    if any(p in vessel_port.upper() for p in atlantic_ports):
+        return "Ballast toward West Africa or Brazil", "Position for Atlantic iron ore/bauxite stems; avoids long Pacific ballast"
+    elif any(p in vessel_port.upper() for p in pacific_ports) or 'CHINA' in vessel_port.upper():
+        return "Remain in Pacific / Position for Australia", "Best positioned for short-haul Australia-China iron ore trade; strong April demand expected"
+    elif 'INDIA' in vessel_port.upper() or 'MUNDRA' in vessel_port.upper() or 'KANDLA' in vessel_port.upper():
+        return "Ballast toward Western Australia", "Position for late-March iron ore stems with minimal ballast"
+    else:
+        return "Seek spot market opportunities", "Monitor FFA rates and emerging cargo opportunities"
 
 
 def get_vessel_info(vessel_name: str) -> str:
@@ -670,46 +812,7 @@ if not DATA_LOADED:
     st.error(f"Failed to load data: {IMPORT_ERROR}")
     st.stop()
 
-# STICKY METRICS ROW - Only show if scenario applied
-if st.session_state.scenario_applied:
-    # Create a container that will be sticky
-    metrics_container = st.container()
-    with metrics_container:
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-value">${st.session_state.total_profit:,.0f}</div>
-                <div class="metric-label">Portfolio Profit</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with col2:
-            valid = st.session_state.optimization_results[st.session_state.optimization_results['profit'] > -999999]
-            assigned = len(valid[valid['cargo'] != 'SPOT MARKET'])
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-value">{assigned}</div>
-                <div class="metric-label">Voyages Assigned</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with col3:
-            avg_tce = valid[valid['cargo'] != 'SPOT MARKET']['tce'].mean() if not valid.empty else 0
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-value">${avg_tce:,.0f}</div>
-                <div class="metric-label">Avg TCE/day</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # Show current scenario
-        scenario_label = get_scenario_label()
-        if scenario_label:
-            st.markdown(f"""
-            <div class="scenario-box">
-                📊 <strong>Active Scenario:</strong> {scenario_label}
-            </div>
-            """, unsafe_allow_html=True)
-
+# Clean chatbot interface - no fixed header
 st.divider()
 
 # Sidebar with scenario controls
@@ -752,10 +855,18 @@ All visualizations will now reflect this scenario. Click any Quick Action to see
         st.rerun()
     
     if st.button("🔄 Reset to Base", use_container_width=True):
-        apply_scenario(0, 0)
-        # Reset slider values in session state
-        st.session_state.bunker_slider = 0
-        st.session_state.port_slider = 0
+        # Reset all scenario values
+        st.session_state.current_vlsfo = st.session_state.base_vlsfo
+        st.session_state.current_mgo = st.session_state.base_mgo
+        st.session_state.current_port_delay = 0
+        st.session_state.scenario_applied = False
+        
+        # Re-run optimization with base values
+        results = optimize_portfolio(include_market_cargoes=False, verbose=False)
+        st.session_state.optimization_results = results
+        valid = results[results['profit'] > -999999]
+        st.session_state.total_profit = valid['profit'].sum()
+        
         st.session_state.messages.append({
             "role": "assistant",
             "content": "✅ Reset to base scenario (VLSFO: $490/MT, no port delays)"
@@ -763,6 +874,26 @@ All visualizations will now reflect this scenario. Click any Quick Action to see
         st.rerun()
     
     st.divider()
+    
+    # Portfolio Metrics in Sidebar
+    if st.session_state.scenario_applied:
+        valid = st.session_state.optimization_results[st.session_state.optimization_results['profit'] > -999999]
+        assigned = len(valid[valid['cargo'] != 'SPOT MARKET'])
+        avg_tce = valid[valid['cargo'] != 'SPOT MARKET']['tce'].mean() if not valid.empty else 0
+        
+        st.markdown("### 📈 Portfolio Metrics")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("💰 Profit", f"${st.session_state.total_profit:,.0f}")
+        with col2:
+            st.metric("🚢 Voyages", f"{assigned}")
+        st.metric("📊 Avg TCE", f"${avg_tce:,.0f}/day")
+        
+        scenario_label = get_scenario_label()
+        if scenario_label:
+            st.info(f"📊 **Active:** {scenario_label}")
+        
+        st.divider()
     
     st.markdown("### ⚡ Quick Actions")
     

@@ -257,6 +257,7 @@ def load_market_vessels() -> pd.DataFrame:
         {
             'vessel_name': 'ATLANTIC FORTUNE',
             'dwt': 181200,
+            'hire_rate': 18454,
             'speed_laden_warranted': 13.8,
             'speed_ballast_warranted': 14.6,
             'speed_laden_eco': 12.3,
@@ -277,6 +278,7 @@ def load_market_vessels() -> pd.DataFrame:
         {
             'vessel_name': 'PACIFIC VANGUARD',
             'dwt': 182050,
+            'hire_rate': 18454,
             'speed_laden_warranted': 13.6,
             'speed_ballast_warranted': 14.3,
             'speed_laden_eco': 12.0,
@@ -297,6 +299,7 @@ def load_market_vessels() -> pd.DataFrame:
         {
             'vessel_name': 'CORAL EMPEROR',
             'dwt': 180450,
+            'hire_rate': 18454,
             'speed_laden_warranted': 13.4,
             'speed_ballast_warranted': 14.1,
             'speed_laden_eco': 11.9,
@@ -317,6 +320,7 @@ def load_market_vessels() -> pd.DataFrame:
         {
             'vessel_name': 'EVEREST OCEAN',
             'dwt': 179950,
+            'hire_rate': 18454,
             'speed_laden_warranted': 13.7,
             'speed_ballast_warranted': 14.5,
             'speed_laden_eco': 12.4,
@@ -337,6 +341,7 @@ def load_market_vessels() -> pd.DataFrame:
         {
             'vessel_name': 'POLARIS SPIRIT',
             'dwt': 181600,
+            'hire_rate': 18454,
             'speed_laden_warranted': 13.9,
             'speed_ballast_warranted': 14.7,
             'speed_laden_eco': 12.5,
@@ -357,6 +362,7 @@ def load_market_vessels() -> pd.DataFrame:
         {
             'vessel_name': 'IRON CENTURY',
             'dwt': 182100,
+            'hire_rate': 18454,
             'speed_laden_warranted': 13.5,
             'speed_ballast_warranted': 14.2,
             'speed_laden_eco': 12.0,
@@ -377,6 +383,7 @@ def load_market_vessels() -> pd.DataFrame:
         {
             'vessel_name': 'MOUNTAIN TRADER',
             'dwt': 180890,
+            'hire_rate': 18454,
             'speed_laden_warranted': 13.3,
             'speed_ballast_warranted': 14.0,
             'speed_laden_eco': 12.1,
@@ -397,6 +404,7 @@ def load_market_vessels() -> pd.DataFrame:
         {
             'vessel_name': 'NAVIS PRIDE',
             'dwt': 181400,
+            'hire_rate': 18454,
             'speed_laden_warranted': 13.8,
             'speed_ballast_warranted': 14.5,
             'speed_laden_eco': 12.6,
@@ -417,6 +425,7 @@ def load_market_vessels() -> pd.DataFrame:
         {
             'vessel_name': 'AURORA SKY',
             'dwt': 179880,
+            'hire_rate': 18454,
             'speed_laden_warranted': 13.4,
             'speed_ballast_warranted': 14.1,
             'speed_laden_eco': 12.0,
@@ -437,6 +446,7 @@ def load_market_vessels() -> pd.DataFrame:
         {
             'vessel_name': 'ZENITH GLORY',
             'dwt': 182500,
+            'hire_rate': 18454,
             'speed_laden_warranted': 13.9,
             'speed_ballast_warranted': 14.6,
             'speed_laden_eco': 12.4,
@@ -457,6 +467,7 @@ def load_market_vessels() -> pd.DataFrame:
         {
             'vessel_name': 'TITAN LEGACY',
             'dwt': 180650,
+            'hire_rate': 18454,
             'speed_laden_warranted': 13.5,
             'speed_ballast_warranted': 14.2,
             'speed_laden_eco': 12.2,
