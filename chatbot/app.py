@@ -56,6 +56,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Load Plotly from CDN to avoid proxy issues
+st.markdown("""
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+""", unsafe_allow_html=True)
+
 # Cargill brand colors and professional styling
 st.markdown("""
 <style>
@@ -310,20 +315,20 @@ def get_all_tce_data() -> List[Dict]:
     for _, vessel in vessels[vessels['vessel_type'] == 'cargill'].iterrows():
         for _, cargo in cargill_cargoes.iterrows():
             try:
+                # calculate_voyage_profit uses global DISTANCE_LOOKUP, not a parameter
                 result = calculate_voyage_profit(
                     vessel=vessel,
-                    cargo=cargo,
-                    distances=data['distances'],
-                    vlsfo_price=st.session_state.base_vlsfo,
-                    mgo_price=st.session_state.base_mgo
+                    cargo=cargo
                 )
                 results.append({
                     'vessel': vessel['vessel_name'],
                     'cargo': cargo['cargo_id'],
                     'tce': result.get('tce', 0) if result else 0,
-                    'profit': result.get('voyage_profit', 0) if result else 0
+                    'profit': result.get('profit', 0) if result else 0
                 })
-            except:
+            except Exception as e:
+                # Log the error for debugging
+                print(f"Error calculating {vessel['vessel_name']} -> {cargo['cargo_id']}: {e}")
                 results.append({
                     'vessel': vessel['vessel_name'],
                     'cargo': cargo['cargo_id'],
@@ -590,11 +595,11 @@ with st.sidebar:
     st.caption(f"MGO: ${st.session_state.base_mgo}/MT")
 
 # Display chat messages
-for message in st.session_state.messages:
+for idx, message in enumerate(st.session_state.messages):
     with st.chat_message(message["role"]):
         st.markdown(message["content"], unsafe_allow_html=True)
         if message.get("viz") is not None:
-            st.plotly_chart(message["viz"], use_container_width=True)
+            st.plotly_chart(message["viz"], use_container_width=True, key=f"chat_viz_{idx}")
 
 # Chat input
 if prompt := st.chat_input("Ask about voyage recommendations..."):
@@ -607,7 +612,7 @@ if prompt := st.chat_input("Ask about voyage recommendations..."):
     with st.chat_message("assistant"):
         st.markdown(response, unsafe_allow_html=True)
         if viz is not None:
-            st.plotly_chart(viz, use_container_width=True)
+            st.plotly_chart(viz, use_container_width=True, key=f"new_viz_{len(st.session_state.messages)}")
 
 # Show initial summary if no messages
 if not st.session_state.messages:
@@ -617,7 +622,7 @@ if not st.session_state.messages:
         # Show initial heatmap
         tce_data = get_all_tce_data()
         if tce_data:
-            st.plotly_chart(viz_heatmap(tce_data), use_container_width=True)
+            st.plotly_chart(viz_heatmap(tce_data), use_container_width=True, key="initial_heatmap")
 
 # =============================================================================
 # FOOTER
