@@ -1,0 +1,6 @@
+[
+  {"route": "5TC", "description": "Avg. of 5 Capesize T/C routes", "rate": 18454.0, "unit": "USD/day"},
+  {"route": "C3", "description": "Tubarao-Qingdao", "rate": 20.908, "unit": "USD/MT"},
+  {"route": "C5", "description": "West Australia-Qingdao", "rate": 8.717, "unit": "USD/MT"},
+  {"route": "C7", "description": "Bolivar-Rotterdam", "rate": 11.821, "unit": "USD/MT"}
+]

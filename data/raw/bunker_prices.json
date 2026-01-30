@@ -1,0 +1,11 @@
+[
+  {"location": "SINGAPORE", "vlsfo": 490, "mgo": 649},
+  {"location": "FUJAIRAH", "vlsfo": 478, "mgo": 638},
+  {"location": "DURBAN", "vlsfo": 437, "mgo": 510},
+  {"location": "ROTTERDAM", "vlsfo": 467, "mgo": 613},
+  {"location": "GIBRALTAR", "vlsfo": 474, "mgo": 623},
+  {"location": "PORT LOUIS", "vlsfo": 454, "mgo": 583},
+  {"location": "QINGDAO", "vlsfo": 643, "mgo": 833},
+  {"location": "SHANGHAI", "vlsfo": 645, "mgo": 836},
+  {"location": "RICHARDS BAY", "vlsfo": 441, "mgo": 519}
+]
