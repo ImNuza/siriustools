@@ -590,8 +590,8 @@ Total Profit: <strong>${cargill_profit:,.0f}</strong><br><br>
 <strong>✅ BETTER OPTIONS FOUND!</strong><br><br>
 
 <strong>Optimized Allocation (Mixed Fleet Strategy):</strong><br>
-Total Profit: <strong>${mixed_profit:,.0f}</strong><br>
-Improvement: <strong>${improvement:,.0f} (+{improvement_pct:.1f}%)</strong><br><br>
+Total Profit: <strong>&dollar;{mixed_profit:,.0f}</strong><br>
+Improvement: <strong>&dollar;{improvement:,.0f} (+{improvement_pct:.1f}%)</strong><br><br>
 
 <strong>📈 SPECIFIC IMPROVEMENTS:</strong><br>
 """
