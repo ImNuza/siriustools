@@ -758,7 +758,7 @@ def get_better_options_analysis() -> Tuple[str, Any]:
     
     # Add detailed voyage info for the best strategy
     best_strategy = comparison['best_strategy']
-    best_result = comparison[best_strategy]
+    best_result = comparison['best_result']  # Fixed: use 'best_result' key, not strategy name
     
     output += "\n\n---\n\n## Detailed Voyage Calculations (Best Strategy)\n\n"
     
