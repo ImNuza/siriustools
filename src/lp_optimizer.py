@@ -48,6 +48,10 @@ class VoyageResult:
     profit: float
     tce: float
     feasible: bool
+    # Additional fields for detailed display
+    hire_rate: float = 0.0
+    quantity: float = 0.0
+    freight_rate: float = 0.0
     infeasibility_reason: str = ""
 
 
@@ -164,6 +168,11 @@ class FleetOptimizer:
                 extra_port_days=additional_port_days
             )
             
+            # Get additional fields for detailed display
+            hire_rate = vessel.get('hire_rate', vessel.get('daily_hire', 0))
+            quantity = cargo.get('quantity', 0)
+            freight_rate = cargo.get('freight_rate', 0)
+            
             return VoyageResult(
                 vessel=vessel_name,
                 cargo=cargo_id,
@@ -184,9 +193,17 @@ class FleetOptimizer:
                 profit=result.get('profit', 0),
                 tce=result.get('tce', 0),
                 feasible=feasible,
+                hire_rate=hire_rate,
+                quantity=quantity,
+                freight_rate=freight_rate,
                 infeasibility_reason=infeasibility_reason
             )
         except Exception as e:
+            # Get fields even for error case
+            hire_rate = vessel.get('hire_rate', vessel.get('daily_hire', 0))
+            quantity = cargo.get('quantity', 0)
+            freight_rate = cargo.get('freight_rate', 0)
+            
             return VoyageResult(
                 vessel=vessel_name,
                 cargo=cargo_id,
@@ -200,6 +217,9 @@ class FleetOptimizer:
                 revenue=0, hire_cost=0, bunker_cost=0, port_cost=0, commission=0,
                 profit=0, tce=0,
                 feasible=False,
+                hire_rate=hire_rate,
+                quantity=quantity,
+                freight_rate=freight_rate,
                 infeasibility_reason=str(e)
             )
     
