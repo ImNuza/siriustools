@@ -52,6 +52,24 @@ except ImportError as e:
     IMPORT_ERROR = str(e)
 
 # =============================================================================
+# AI-ENHANCED MODE (Optional Featherless.ai Integration)
+# =============================================================================
+
+try:
+    from ai_assistant import (
+        check_api_available,
+        get_ai_response,
+        format_ai_response,
+        process_with_ai_enhancement,
+        process_freeform_query,
+        AI_LIMITATIONS
+    )
+    AI_AVAILABLE = True
+except ImportError:
+    AI_AVAILABLE = False
+    AI_LIMITATIONS = ""
+
+# =============================================================================
 # PAGE CONFIG & CARGILL STYLING
 # =============================================================================
 
@@ -1002,6 +1020,70 @@ All visualizations will now reflect this scenario. Click any Quick Action to see
     
     st.divider()
     
+    # =============================================================================
+    # AI-ENHANCED MODE TOGGLE
+    # =============================================================================
+    if AI_AVAILABLE:
+        st.markdown("### 🤖 AI Mode")
+        
+        # Initialize AI mode state
+        if 'ai_mode_enabled' not in st.session_state:
+            st.session_state.ai_mode_enabled = False
+        if 'ai_status_checked' not in st.session_state:
+            st.session_state.ai_status_checked = False
+        if 'ai_status_message' not in st.session_state:
+            st.session_state.ai_status_message = ""
+        
+        # AI mode toggle
+        ai_mode = st.toggle(
+            "Enable AI-Enhanced Mode",
+            value=st.session_state.ai_mode_enabled,
+            key="ai_toggle",
+            help="Use Featherless.ai for natural language responses"
+        )
+        
+        if ai_mode != st.session_state.ai_mode_enabled:
+            st.session_state.ai_mode_enabled = ai_mode
+            if ai_mode:
+                # Check API status when enabling
+                with st.spinner("Checking AI connection..."):
+                    available, message = check_api_available()
+                    st.session_state.ai_status_checked = True
+                    st.session_state.ai_status_message = message
+                    if not available:
+                        st.session_state.ai_mode_enabled = False
+                        st.error(f"❌ {message}")
+                    else:
+                        st.success("✅ AI connected!")
+            st.rerun()
+        
+        if st.session_state.ai_mode_enabled:
+            st.markdown("""<div style="font-size: 0.8rem; color: #7c3aed; background: #ede9fe; padding: 8px; border-radius: 6px;">🤖 <strong>AI Mode Active</strong><br>Responses enhanced with Qwen-72B</div>""", unsafe_allow_html=True)
+            
+            # Show limitations expander
+            with st.expander("⚠️ View AI Limitations", expanded=False):
+                st.markdown("""
+**AI-Enhanced Mode Limitations:**
+
+1. **Accuracy**: AI may occasionally generate inaccurate information. Always verify critical numbers with the data.
+
+2. **Latency**: API calls add 2-5 seconds to response time.
+
+3. **Read-Only**: AI cannot modify optimization parameters or run new calculations.
+
+4. **Rate Limits**: Heavy usage may hit API limits.
+
+5. **Context Window**: AI has limited memory of conversation history.
+
+6. **No Real-Time Data**: AI uses cached optimization results, not live market data.
+
+**Recommendation**: Use AI Mode for exploration and explanations. Use Standard Mode for precise calculations.
+                """)
+        else:
+            st.caption("Standard rule-based mode active")
+        
+        st.divider()
+    
     # Portfolio Metrics in Sidebar
     if st.session_state.scenario_applied:
         valid = st.session_state.optimization_results[st.session_state.optimization_results['profit'] > -999999]
@@ -1131,7 +1213,36 @@ if prompt := st.chat_input("Ask about voyage recommendations..."):
     with st.chat_message("user"):
         st.markdown(prompt)
     
-    response, viz = process_query(prompt)
+    # Check if AI mode is enabled
+    use_ai_mode = AI_AVAILABLE and st.session_state.get('ai_mode_enabled', False)
+    
+    if use_ai_mode:
+        # AI-Enhanced Mode: Combine rule-based + AI
+        with st.spinner("🤖 AI is thinking..."):
+            # First get rule-based response for accuracy
+            rule_response, viz = process_query(prompt)
+            
+            # Check if rule-based gave a meaningful response (not just help text)
+            is_help_response = "I can help you with" in rule_response
+            
+            if is_help_response:
+                # Freeform query - let AI handle it
+                response, viz = process_freeform_query(
+                    prompt, 
+                    st.session_state,
+                    st.session_state.messages
+                )
+            else:
+                # Enhance rule-based response with AI summary
+                response, viz = process_with_ai_enhancement(
+                    prompt,
+                    rule_response,
+                    viz,
+                    st.session_state
+                )
+    else:
+        # Standard rule-based mode
+        response, viz = process_query(prompt)
     
     msg = {"role": "assistant", "content": response}
     if viz:
@@ -1146,4 +1257,7 @@ if prompt := st.chat_input("Ask about voyage recommendations..."):
 
 # Footer
 st.divider()
-st.caption("Cargill-SMU Datathon 2026 | Team Sirius | Powered by Streamlit & OR-Tools")
+if AI_AVAILABLE and st.session_state.get('ai_mode_enabled', False):
+    st.caption("Cargill-SMU Datathon 2026 | Team Sirius | Powered by Streamlit, OR-Tools & Featherless.ai")
+else:
+    st.caption("Cargill-SMU Datathon 2026 | Team Sirius | Powered by Streamlit & OR-Tools")
